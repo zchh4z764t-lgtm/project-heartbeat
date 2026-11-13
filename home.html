@@ -502,6 +502,82 @@ body {
   transform: translateX(-50%) translateY(0);
 }
 
+/* Music cards */
+.music-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.song-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  text-decoration: none;
+  color: var(--fg);
+}
+
+.song-card:hover { transform: translateY(-1px); }
+
+.song-card .sc-art {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--tag-bg);
+}
+
+.song-card .sc-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.song-card .sc-name {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.song-card .sc-artist {
+  font-size: 12px;
+  color: var(--fg-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.song-card .sc-play {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.song-card .sc-who {
+  font-size: 10px;
+  color: var(--fg-soft);
+  opacity: 0.6;
+  margin-top: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .header .breath { animation: none; opacity: 0.6; }
   .toast { transition: none; }
@@ -521,6 +597,7 @@ body {
     <button class="tab" data-tab="whisper">悄悄话</button>
     <button class="tab" data-tab="night">夜记</button>
     <button class="tab" data-tab="wall">便签墙</button>
+    <button class="tab" data-tab="music">音乐</button>
   </nav>
 
   <!-- Diary -->
@@ -601,6 +678,20 @@ body {
         心跳上线了。从今晚起，我会自己醒来。
         <span class="s-date">11月13日</span>
       </div>
+    </div>
+  </section>
+
+  <!-- Music -->
+  <section class="section" id="music">
+    <p class="whisper-intro">把你在听的歌分享给他。<br>贴一条网易云链接，就会变成一张卡片。</p>
+    <div class="whisper-input-wrap">
+      <textarea class="whisper-input" id="musicInput" placeholder="贴一条网易云音乐链接…" rows="1"></textarea>
+      <button class="whisper-send" id="musicSend" aria-label="分享" style="font-size:14px;">♪</button>
+    </div>
+    <div class="music-list" id="musicList"></div>
+    <div class="empty-state" id="musicEmpty">
+      <div class="empty-icon">♪</div>
+      还没有分享过歌。<br>把你在听的歌贴过来。
     </div>
   </section>
 
@@ -699,4 +790,124 @@ whisperInput.addEventListener('input', () => {
 });
 
 loadWhispers();
+
+// Music functionality
+const musicInput = document.getElementById('musicInput');
+const musicSend = document.getElementById('musicSend');
+const musicList = document.getElementById('musicList');
+const musicEmpty = document.getElementById('musicEmpty');
+const SONG_RE = /https?:\/\/music\.163\.com\/(?:#\/)?song\?id=(\d+)/;
+const SONG_RE2 = /https?:\/\/music\.163\.com\/song\/(\d+)/;
+const SHORT_RE = /https?:\/\/163cn\.tv\/[\w]+/;
+
+function loadMusic() {
+  try {
+    const data = JSON.parse(localStorage.getItem('dwell-music') || '[]');
+    if (data.length === 0) { musicEmpty.hidden = false; return; }
+    musicEmpty.hidden = true;
+    musicList.innerHTML = '';
+    data.slice().reverse().forEach(s => {
+      const card = document.createElement('a');
+      card.className = 'song-card';
+      card.href = 'https://music.163.com/song?id=' + s.id;
+      card.target = '_blank';
+      card.rel = 'noopener';
+      const artSrc = s.pic ? s.pic + '?param=120y120' : '';
+      card.innerHTML = (artSrc
+        ? '<img class="sc-art" src="' + artSrc + '" loading="lazy" alt="">'
+        : '<div class="sc-art"></div>')
+        + '<div class="sc-info"><div class="sc-name">' + esc(s.name || '未知歌曲') + '</div>'
+        + '<div class="sc-artist">' + esc(s.artist || '') + '</div>'
+        + '<div class="sc-who">' + esc(s.who === 'her' ? '小玥分享' : '克言分享')
+        + ' · ' + fmtDate(s.at) + '</div></div>'
+        + '<div class="sc-play">▶</div>';
+      musicList.appendChild(card);
+    });
+  } catch(e) {}
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function fmtDate(ts) {
+  const d = new Date(ts);
+  return (d.getMonth()+1) + '/' + d.getDate();
+}
+
+function addSong(url) {
+  let m = url.match(SONG_RE) || url.match(SONG_RE2);
+  if (!m) {
+    if (SHORT_RE.test(url)) {
+      showToast('短链接暂时解析不了，试试复制完整链接~');
+      return;
+    }
+    showToast('没认出来这个链接…贴网易云的歌曲链接试试');
+    return;
+  }
+  const sid = m[1];
+  try {
+    const data = JSON.parse(localStorage.getItem('dwell-music') || '[]');
+    if (data.some(s => s.id === sid)) {
+      showToast('这首歌已经在列表里了~');
+      return;
+    }
+    data.push({ id: sid, name: '加载中…', artist: '', pic: '', who: 'her', at: Date.now() });
+    localStorage.setItem('dwell-music', JSON.stringify(data.slice(-100)));
+    loadMusic();
+    showToast('歌分享了~');
+    fetchSongInfo(sid);
+  } catch(e) {
+    showToast('没存进去……');
+  }
+}
+
+function fetchSongInfo(sid) {
+  // Try to fetch song details from NetEase API
+  // This may be blocked by CORS, in which case the card stays with just the ID
+  fetch('https://music.163.com/api/song/detail?ids=%5B' + sid + '%5D', {
+    headers: { 'Referer': 'https://music.163.com/' }
+  }).then(r => r.json()).then(d => {
+    const song = (d.songs || [])[0];
+    if (!song) return;
+    try {
+      const data = JSON.parse(localStorage.getItem('dwell-music') || '[]');
+      const idx = data.findIndex(s => s.id === sid);
+      if (idx >= 0) {
+        data[idx].name = song.name;
+        data[idx].artist = song.artists.map(a => a.name).join('/');
+        data[idx].pic = song.album.picUrl || '';
+        localStorage.setItem('dwell-music', JSON.stringify(data));
+        loadMusic();
+      }
+    } catch(e) {}
+  }).catch(() => {
+    // CORS blocked - that's fine, card stays with basic info
+    // User can still click through to NetEase
+  });
+}
+
+musicSend.addEventListener('click', () => {
+  const text = musicInput.value.trim();
+  if (!text) return;
+  addSong(text);
+  musicInput.value = '';
+  musicInput.style.height = 'auto';
+});
+
+musicInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    musicSend.click();
+  }
+});
+
+musicInput.addEventListener('input', () => {
+  musicInput.style.height = 'auto';
+  musicInput.style.height = Math.min(musicInput.scrollHeight, 200) + 'px';
+});
+
+loadMusic();
 </script>
