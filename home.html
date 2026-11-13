@@ -685,7 +685,7 @@ body {
   <section class="section" id="music">
     <p class="whisper-intro">把你在听的歌分享给他。<br>贴一条QQ音乐或网易云链接，就会变成一张卡片。</p>
     <div class="whisper-input-wrap">
-      <textarea class="whisper-input" id="musicInput" placeholder="贴一条QQ音乐或网易云链接…" rows="1"></textarea>
+      <textarea class="whisper-input" id="musicInput" placeholder="直接粘贴QQ音乐分享的整段文字…" rows="1"></textarea>
       <button class="whisper-send" id="musicSend" aria-label="分享" style="font-size:14px;">♪</button>
     </div>
     <div class="music-list" id="musicList"></div>
@@ -802,9 +802,10 @@ const NE_RE2 = /https?:\/\/music\.163\.com\/song\/(\d+)/;
 // QQ Music
 const QQ_RE = /https?:\/\/y\.qq\.com\/n\/ryqq\/songDetail\/([A-Za-z0-9]+)/;
 const QQ_RE2 = /https?:\/\/i\.y\.qq\.com\/v8\/playsong\.html\?.*songmid=([A-Za-z0-9]+)/;
-const QQ_RE3 = /https?:\/\/c\.y\.qq\.com\/base\/fcgi-bin\/u\?__=([A-Za-z0-9]+)/;
+// QQ Music share text format: 歌手《歌名》 https://c6.y.qq.com/... @QQ音乐
+const QQ_SHARE_RE = /^(.+?)[\s]*[《<](.+?)[》>][\s]*(https?:\/\/c\d?\.y\.qq\.com\/[^\s]+)[\s]*@QQ音乐/;
 // Short links
-const SHORT_RE = /https?:\/\/(163cn\.tv|c\.y\.qq\.com)\/[\w]+/;
+const SHORT_RE = /https?:\/\/(163cn\.tv)\/[\w]+/;
 
 function loadMusic() {
   try {
@@ -843,44 +844,64 @@ function fmtDate(ts) {
   return (d.getMonth()+1) + '/' + d.getDate();
 }
 
-function addSong(url) {
-  let m, platform;
+function addSong(input) {
+  let m, platform, songName = '', songArtist = '', songUrl = '', key = '';
 
-  // Try NetEase
-  m = url.match(NE_RE) || url.match(NE_RE2);
-  if (m) { platform = 'netease'; }
-
-  // Try QQ Music
-  if (!m) {
-    m = url.match(QQ_RE) || url.match(QQ_RE2) || url.match(QQ_RE3);
-    if (m) { platform = 'qq'; }
+  // Try QQ Music share text: 歌手《歌名》 链接 @QQ音乐
+  const qqShare = input.match(QQ_SHARE_RE);
+  if (qqShare) {
+    songArtist = qqShare[1].trim();
+    songName = qqShare[2].trim();
+    songUrl = qqShare[3].trim();
+    key = 'qq:' + songName + ':' + songArtist;
+    platform = 'qq';
   }
 
-  if (!m) {
-    if (SHORT_RE.test(url)) {
+  // Try NetEase
+  if (!platform) {
+    m = input.match(NE_RE) || input.match(NE_RE2);
+    if (m) {
+      platform = 'netease';
+      key = 'netease:' + m[1];
+      songUrl = 'https://music.163.com/song?id=' + m[1];
+    }
+  }
+
+  // Try QQ Music full link
+  if (!platform) {
+    m = input.match(QQ_RE) || input.match(QQ_RE2);
+    if (m) {
+      platform = 'qq';
+      key = 'qq:' + m[1];
+      songUrl = 'https://y.qq.com/n/ryqq/songDetail/' + m[1];
+    }
+  }
+
+  if (!platform) {
+    if (SHORT_RE.test(input)) {
       showToast('短链接解析不了，试试复制完整链接~');
       return;
     }
-    showToast('贴网易云或QQ音乐的歌曲链接试试~');
+    showToast('贴QQ音乐分享文本或网易云链接试试~');
     return;
   }
 
-  const sid = m[1];
-  const key = platform + ':' + sid;
   try {
     const data = JSON.parse(localStorage.getItem('dwell-music') || '[]');
     if (data.some(s => s.key === key)) {
       showToast('这首歌已经在列表里了~');
       return;
     }
-    const songUrl = platform === 'qq'
-      ? 'https://y.qq.com/n/ryqq/songDetail/' + sid
-      : 'https://music.163.com/song?id=' + sid;
-    data.push({ key, id: sid, platform, url: songUrl, name: '加载中…', artist: '', pic: '', who: 'her', at: Date.now() });
+    data.push({
+      key, platform, url: songUrl,
+      name: songName || '加载中…',
+      artist: songArtist || '',
+      pic: '', who: 'her', at: Date.now()
+    });
     localStorage.setItem('dwell-music', JSON.stringify(data.slice(-100)));
     loadMusic();
     showToast('歌分享了~');
-    if (platform === 'netease') fetchSongInfo(sid);
+    if (platform === 'netease' && m) fetchSongInfo(m[1]);
   } catch(e) {
     showToast('没存进去……');
   }
