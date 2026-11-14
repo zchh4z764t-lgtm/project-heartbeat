@@ -699,7 +699,6 @@ body {
 
   <footer class="footer">
     <p>dwell · 他住在这儿</p>
-    <p id="dbg" style="font-size:10px;color:var(--fg-soft);opacity:0.4;margin-top:6px;word-break:break-all;"></p>
   </footer>
 </div>
 
@@ -757,32 +756,18 @@ function fmtTime(ts) {
 let db = null;
 let allMusic = [];
 
-var dbg = document.getElementById('dbg');
-var dbgMsgs = [];
-function dbgLog(msg) {
-  dbgMsgs.push(msg);
-  if (dbg) dbg.textContent = dbgMsgs.join(' | ');
-}
-
 async function initDB() {
-  dbgLog('connecting...');
-  if (!window.claude) { dbgLog('no window.claude'); return; }
+  if (!window.claude) return;
   var namespace;
   try {
     namespace = await window.claude.use("db");
   } catch(e) {
-    dbgLog('use("db") error: ' + e.message);
     return;
   }
-  if (!namespace) { dbgLog('db = null'); return; }
+  if (!namespace) return;
   db = namespace;
-  dbgLog('db ok, loading...');
-  try {
-    await loadWhispersOnce();
-    await loadMusicOnce();
-  } catch(e) {
-    dbgLog('load error: ' + e.message);
-  }
+  await loadWhispersOnce();
+  await loadMusicOnce();
   trySubscribeWhispers();
   trySubscribeMusic();
 }
@@ -818,11 +803,8 @@ async function loadWhispersOnce() {
     var data = [];
     (snap.docs || []).forEach(function(doc) { data.push(doc.data()); });
     data.sort(function(a, b) { return (a.at || 0) - (b.at || 0); });
-    dbgLog('w:' + data.length);
     renderWhispers(data);
-  } catch(e) {
-    dbgLog('whisper load err: ' + e.message);
-  }
+  } catch(e) {}
 }
 
 function trySubscribeWhispers() {
