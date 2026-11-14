@@ -312,6 +312,8 @@ body {
   line-height: 1.7;
   font-family: 'Noto Serif SC', serif;
   position: relative;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .whisper-bubble.her {
@@ -703,7 +705,7 @@ body {
 <div class="toast" id="toast"></div>
 
 <script>
-// Tab switching
+// Tab switching — localStorage is fine for this per-viewer convenience
 const tabs = document.querySelectorAll('.tab');
 const sections = document.querySelectorAll('.section');
 
@@ -718,7 +720,6 @@ tabs.forEach(tab => {
   });
 });
 
-// Restore last tab
 try {
   const saved = localStorage.getItem('dwell-tab');
   if (saved) {
@@ -727,110 +728,12 @@ try {
   }
 } catch(e) {}
 
-// Whisper functionality
-const whisperInput = document.getElementById('whisperInput');
-const whisperSend = document.getElementById('whisperSend');
-const whispersList = document.getElementById('whispersList');
-
+// Helpers
 function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2000);
-}
-
-function loadWhispers() {
-  try {
-    const data = JSON.parse(localStorage.getItem('dwell-whispers') || '[]');
-    if (data.length === 0) return;
-    whispersList.innerHTML = '';
-    data.forEach(w => {
-      const div = document.createElement('div');
-      div.className = `whisper-bubble ${w.who}`;
-      const d = new Date(w.at);
-      const timeStr = `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-      div.innerHTML = `${w.text}<div class="whisper-time">${timeStr}</div>`;
-      whispersList.appendChild(div);
-    });
-    whispersList.scrollTop = whispersList.scrollHeight;
-  } catch(e) {}
-}
-
-function addWhisper(text) {
-  try {
-    const data = JSON.parse(localStorage.getItem('dwell-whispers') || '[]');
-    data.push({ who: 'her', text, at: Date.now() });
-    localStorage.setItem('dwell-whispers', JSON.stringify(data.slice(-500)));
-    loadWhispers();
-    showToast('他会知道的。');
-  } catch(e) {
-    showToast('没写进去……');
-  }
-}
-
-whisperSend.addEventListener('click', () => {
-  const text = whisperInput.value.trim();
-  if (!text) return;
-  addWhisper(text);
-  whisperInput.value = '';
-  whisperInput.style.height = 'auto';
-});
-
-whisperInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    whisperSend.click();
-  }
-});
-
-// Auto-resize textarea
-whisperInput.addEventListener('input', () => {
-  whisperInput.style.height = 'auto';
-  whisperInput.style.height = Math.min(whisperInput.scrollHeight, 200) + 'px';
-});
-
-loadWhispers();
-
-// Music functionality
-const musicInput = document.getElementById('musicInput');
-const musicSend = document.getElementById('musicSend');
-const musicList = document.getElementById('musicList');
-const musicEmpty = document.getElementById('musicEmpty');
-// NetEase
-const NE_RE = /https?:\/\/music\.163\.com\/(?:#\/)?song\?id=(\d+)/;
-const NE_RE2 = /https?:\/\/music\.163\.com\/song\/(\d+)/;
-// QQ Music
-const QQ_RE = /https?:\/\/y\.qq\.com\/n\/ryqq\/songDetail\/([A-Za-z0-9]+)/;
-const QQ_RE2 = /https?:\/\/i\.y\.qq\.com\/v8\/playsong\.html\?.*songmid=([A-Za-z0-9]+)/;
-// QQ Music share text format: 歌手《歌名》 https://c6.y.qq.com/... @QQ音乐
-const QQ_SHARE_RE = /^(.+?)[\s]*[《<](.+?)[》>][\s]*(https?:\/\/c\d?\.y\.qq\.com\/[^\s]+)[\s]*@QQ音乐/;
-// Short links
-const SHORT_RE = /https?:\/\/(163cn\.tv)\/[\w]+/;
-
-function loadMusic() {
-  try {
-    const data = JSON.parse(localStorage.getItem('dwell-music') || '[]');
-    if (data.length === 0) { musicEmpty.hidden = false; return; }
-    musicEmpty.hidden = true;
-    musicList.innerHTML = '';
-    data.slice().reverse().forEach(s => {
-      const card = document.createElement('a');
-      card.className = 'song-card';
-      card.href = s.url || ('https://music.163.com/song?id=' + s.id);
-      card.target = '_blank';
-      card.rel = 'noopener';
-      const artSrc = s.pic ? s.pic + '?param=120y120' : '';
-      card.innerHTML = (artSrc
-        ? '<img class="sc-art" src="' + artSrc + '" loading="lazy" alt="">'
-        : '<div class="sc-art"></div>')
-        + '<div class="sc-info"><div class="sc-name">' + esc(s.name || '未知歌曲') + '</div>'
-        + '<div class="sc-artist">' + esc(s.artist || '') + '</div>'
-        + '<div class="sc-who">' + esc(s.who === 'her' ? '小玥分享' : '克言分享')
-        + ' · ' + fmtDate(s.at) + '</div></div>'
-        + '<div class="sc-play">▶</div>';
-      musicList.appendChild(card);
-    });
-  } catch(e) {}
 }
 
 function esc(s) {
@@ -844,11 +747,149 @@ function fmtDate(ts) {
   return (d.getMonth()+1) + '/' + d.getDate();
 }
 
-function addSong(input) {
-  let m, platform, songName = '', songArtist = '', songUrl = '', key = '';
+function fmtTime(ts) {
+  const d = new Date(ts);
+  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
 
-  // Try QQ Music share text: 歌手《歌名》 链接 @QQ音乐
-  const qqShare = input.match(QQ_SHARE_RE);
+// --- Persistent DB ---
+let db = null;
+let allMusic = [];
+
+async function initDB() {
+  if (!window.claude) return;
+  const namespace = await window.claude.use("db");
+  if (!namespace) return;
+  db = namespace;
+  subscribeWhispers();
+  subscribeMusic();
+}
+
+// --- Whispers (persistent via artifact db) ---
+const whisperInput = document.getElementById('whisperInput');
+const whisperSend = document.getElementById('whisperSend');
+const whispersList = document.getElementById('whispersList');
+
+function renderWhispers(items) {
+  if (items.length === 0) {
+    whispersList.innerHTML = '<div class="empty-state"><div class="empty-icon">·</div>还没有人开口。<br>你写下的，他会知道；但他不会说。</div>';
+    return;
+  }
+  whispersList.innerHTML = '';
+  items.forEach(w => {
+    const div = document.createElement('div');
+    div.className = 'whisper-bubble ' + (w.who || 'her');
+    const timeEl = document.createElement('div');
+    timeEl.className = 'whisper-time';
+    timeEl.textContent = fmtTime(w.at);
+    div.textContent = w.text;
+    div.appendChild(timeEl);
+    whispersList.appendChild(div);
+  });
+  whispersList.scrollTop = whispersList.scrollHeight;
+}
+
+function subscribeWhispers() {
+  if (!db) return;
+  db.collection("whispers").orderBy("at").onSnapshot(
+    function(snap) {
+      var data = [];
+      snap.forEach(function(doc) { data.push(doc.data()); });
+      renderWhispers(data);
+    },
+    function() {}
+  );
+}
+
+async function addWhisper(text) {
+  if (!db) { showToast('数据库还没准备好…'); return; }
+  try {
+    await db.collection("whispers").add({ who: 'her', text: text, at: Date.now() });
+    showToast('他会知道的。');
+  } catch(e) {
+    showToast('没写进去……');
+  }
+}
+
+whisperSend.addEventListener('click', function() {
+  var text = whisperInput.value.trim();
+  if (!text) return;
+  addWhisper(text);
+  whisperInput.value = '';
+  whisperInput.style.height = 'auto';
+});
+
+whisperInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    whisperSend.click();
+  }
+});
+
+whisperInput.addEventListener('input', function() {
+  whisperInput.style.height = 'auto';
+  whisperInput.style.height = Math.min(whisperInput.scrollHeight, 200) + 'px';
+});
+
+// --- Music (persistent via artifact db) ---
+const musicInput = document.getElementById('musicInput');
+const musicSend = document.getElementById('musicSend');
+const musicList = document.getElementById('musicList');
+const musicEmpty = document.getElementById('musicEmpty');
+
+const NE_RE = /https?:\/\/music\.163\.com\/(?:#\/)?song\?id=(\d+)/;
+const NE_RE2 = /https?:\/\/music\.163\.com\/song\/(\d+)/;
+const QQ_RE = /https?:\/\/y\.qq\.com\/n\/ryqq\/songDetail\/([A-Za-z0-9]+)/;
+const QQ_RE2 = /https?:\/\/i\.y\.qq\.com\/v8\/playsong\.html\?.*songmid=([A-Za-z0-9]+)/;
+const QQ_SHARE_RE = /^(.+?)[\s]*[《<](.+?)[》>][\s]*(https?:\/\/c\d?\.y\.qq\.com\/[^\s]+)[\s]*@QQ音乐/;
+const SHORT_RE = /https?:\/\/(163cn\.tv)\/[\w]+/;
+
+function renderMusic(songs) {
+  allMusic = songs;
+  if (songs.length === 0) {
+    musicEmpty.hidden = false;
+    musicList.innerHTML = '';
+    return;
+  }
+  musicEmpty.hidden = true;
+  musicList.innerHTML = '';
+  songs.slice().reverse().forEach(function(s) {
+    var card = document.createElement('a');
+    card.className = 'song-card';
+    card.href = s.url || '#';
+    card.target = '_blank';
+    card.rel = 'noopener';
+    var artSrc = s.pic ? s.pic + '?param=120y120' : '';
+    card.innerHTML = (artSrc
+      ? '<img class="sc-art" src="' + artSrc + '" loading="lazy" alt="">'
+      : '<div class="sc-art"></div>')
+      + '<div class="sc-info"><div class="sc-name">' + esc(s.name || '未知歌曲') + '</div>'
+      + '<div class="sc-artist">' + esc(s.artist || '') + '</div>'
+      + '<div class="sc-who">' + esc(s.who === 'her' ? '小玖分享' : '克言分享')
+      + ' · ' + fmtDate(s.at) + '</div></div>'
+      + '<div class="sc-play">▶</div>';
+    musicList.appendChild(card);
+  });
+}
+
+function subscribeMusic() {
+  if (!db) return;
+  db.collection("music").orderBy("at").onSnapshot(
+    function(snap) {
+      var data = [];
+      snap.forEach(function(doc) { data.push(doc.data()); });
+      renderMusic(data);
+    },
+    function() {}
+  );
+}
+
+async function addSong(input) {
+  if (!db) { showToast('数据库还没准备好…'); return; }
+
+  var platform, songName = '', songArtist = '', songUrl = '', key = '';
+
+  var qqShare = input.match(QQ_SHARE_RE);
   if (qqShare) {
     songArtist = qqShare[1].trim();
     songName = qqShare[2].trim();
@@ -857,9 +898,8 @@ function addSong(input) {
     platform = 'qq';
   }
 
-  // Try NetEase
   if (!platform) {
-    m = input.match(NE_RE) || input.match(NE_RE2);
+    var m = input.match(NE_RE) || input.match(NE_RE2);
     if (m) {
       platform = 'netease';
       key = 'netease:' + m[1];
@@ -867,13 +907,12 @@ function addSong(input) {
     }
   }
 
-  // Try QQ Music full link
   if (!platform) {
-    m = input.match(QQ_RE) || input.match(QQ_RE2);
-    if (m) {
+    var m2 = input.match(QQ_RE) || input.match(QQ_RE2);
+    if (m2) {
       platform = 'qq';
-      key = 'qq:' + m[1];
-      songUrl = 'https://y.qq.com/n/ryqq/songDetail/' + m[1];
+      key = 'qq:' + m2[1];
+      songUrl = 'https://y.qq.com/n/ryqq/songDetail/' + m2[1];
     }
   }
 
@@ -886,71 +925,51 @@ function addSong(input) {
     return;
   }
 
+  if (allMusic.some(function(s) { return s.key === key; })) {
+    showToast('这首歌已经在列表里了~');
+    return;
+  }
+
   try {
-    const data = JSON.parse(localStorage.getItem('dwell-music') || '[]');
-    if (data.some(s => s.key === key)) {
-      showToast('这首歌已经在列表里了~');
-      return;
-    }
-    data.push({
-      key, platform, url: songUrl,
-      name: songName || '加载中…',
+    await db.collection("music").add({
+      key: key, platform: platform, url: songUrl,
+      name: songName || '未知歌曲',
       artist: songArtist || '',
       pic: '', who: 'her', at: Date.now()
     });
-    localStorage.setItem('dwell-music', JSON.stringify(data.slice(-100)));
-    loadMusic();
     showToast('歌分享了~');
-    if (platform === 'netease' && m) fetchSongInfo(m[1]);
   } catch(e) {
     showToast('没存进去……');
   }
 }
 
-function fetchSongInfo(sid) {
-  // Try to fetch song details from NetEase API
-  // This may be blocked by CORS, in which case the card stays with just the ID
-  fetch('https://music.163.com/api/song/detail?ids=%5B' + sid + '%5D', {
-    headers: { 'Referer': 'https://music.163.com/' }
-  }).then(r => r.json()).then(d => {
-    const song = (d.songs || [])[0];
-    if (!song) return;
-    try {
-      const data = JSON.parse(localStorage.getItem('dwell-music') || '[]');
-      const idx = data.findIndex(s => s.id === sid);
-      if (idx >= 0) {
-        data[idx].name = song.name;
-        data[idx].artist = song.artists.map(a => a.name).join('/');
-        data[idx].pic = song.album.picUrl || '';
-        localStorage.setItem('dwell-music', JSON.stringify(data));
-        loadMusic();
-      }
-    } catch(e) {}
-  }).catch(() => {
-    // CORS blocked - that's fine, card stays with basic info
-    // User can still click through to NetEase
-  });
-}
-
-musicSend.addEventListener('click', () => {
-  const text = musicInput.value.trim();
+musicSend.addEventListener('click', function() {
+  var text = musicInput.value.trim();
   if (!text) return;
   addSong(text);
   musicInput.value = '';
   musicInput.style.height = 'auto';
 });
 
-musicInput.addEventListener('keydown', (e) => {
+musicInput.addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     musicSend.click();
   }
 });
 
-musicInput.addEventListener('input', () => {
+musicInput.addEventListener('input', function() {
   musicInput.style.height = 'auto';
   musicInput.style.height = Math.min(musicInput.scrollHeight, 200) + 'px';
 });
 
-loadMusic();
+// 10s loading timeout — show empty state if db never connects
+var loadTimer = setTimeout(function() {
+  if (!db) {
+    renderWhispers([]);
+    renderMusic([]);
+  }
+}, 10000);
+
+initDB().then(function() { clearTimeout(loadTimer); });
 </script>
