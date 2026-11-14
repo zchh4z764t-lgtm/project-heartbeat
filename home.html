@@ -758,8 +758,10 @@ let db = null;
 let allMusic = [];
 
 var dbg = document.getElementById('dbg');
+var dbgMsgs = [];
 function dbgLog(msg) {
-  if (dbg) dbg.textContent = msg;
+  dbgMsgs.push(msg);
+  if (dbg) dbg.textContent = dbgMsgs.join(' | ');
 }
 
 async function initDB() {
@@ -778,7 +780,6 @@ async function initDB() {
   try {
     await loadWhispersOnce();
     await loadMusicOnce();
-    dbgLog('loaded');
   } catch(e) {
     dbgLog('load error: ' + e.message);
   }
@@ -817,7 +818,7 @@ async function loadWhispersOnce() {
     var data = [];
     snap.forEach(function(doc) { data.push(doc.data()); });
     data.sort(function(a, b) { return (a.at || 0) - (b.at || 0); });
-    dbgLog('w:' + data.length + ' ' + JSON.stringify(data).slice(0, 200));
+    dbgLog('w:' + data.length);
     renderWhispers(data);
   } catch(e) {
     dbgLog('whisper load err: ' + e.message);
