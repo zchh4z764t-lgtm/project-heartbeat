@@ -816,7 +816,7 @@ async function loadWhispersOnce() {
   try {
     var snap = await db.collection("whispers").get();
     var data = [];
-    snap.forEach(function(doc) { data.push(doc.data()); });
+    (snap.docs || []).forEach(function(doc) { data.push(doc.data()); });
     data.sort(function(a, b) { return (a.at || 0) - (b.at || 0); });
     dbgLog('w:' + data.length);
     renderWhispers(data);
@@ -831,7 +831,7 @@ function trySubscribeWhispers() {
     db.collection("whispers").onSnapshot(
       function(snap) {
         var data = [];
-        snap.forEach(function(doc) { data.push(doc.data()); });
+        (snap.docs || []).forEach(function(doc) { data.push(doc.data()); });
         data.sort(function(a, b) { return (a.at || 0) - (b.at || 0); });
         renderWhispers(data);
       },
@@ -917,7 +917,7 @@ async function loadMusicOnce() {
   try {
     var snap = await db.collection("music").get();
     var data = [];
-    snap.forEach(function(doc) { data.push(doc.data()); });
+    (snap.docs || []).forEach(function(doc) { data.push(doc.data()); });
     data.sort(function(a, b) { return (a.at || 0) - (b.at || 0); });
     renderMusic(data);
   } catch(e) {}
@@ -929,7 +929,7 @@ function trySubscribeMusic() {
     db.collection("music").onSnapshot(
       function(snap) {
         var data = [];
-        snap.forEach(function(doc) { data.push(doc.data()); });
+        (snap.docs || []).forEach(function(doc) { data.push(doc.data()); });
         data.sort(function(a, b) { return (a.at || 0) - (b.at || 0); });
         renderMusic(data);
       },
