@@ -761,8 +761,10 @@ async function initDB() {
   const namespace = await window.claude.use("db");
   if (!namespace) return;
   db = namespace;
-  subscribeWhispers();
-  subscribeMusic();
+  await loadWhispersOnce();
+  await loadMusicOnce();
+  trySubscribeWhispers();
+  trySubscribeMusic();
 }
 
 // --- Whispers (persistent via artifact db) ---
@@ -789,16 +791,30 @@ function renderWhispers(items) {
   whispersList.scrollTop = whispersList.scrollHeight;
 }
 
-function subscribeWhispers() {
+async function loadWhispersOnce() {
   if (!db) return;
-  db.collection("whispers").orderBy("at").onSnapshot(
-    function(snap) {
-      var data = [];
-      snap.forEach(function(doc) { data.push(doc.data()); });
-      renderWhispers(data);
-    },
-    function() {}
-  );
+  try {
+    var snap = await db.collection("whispers").get();
+    var data = [];
+    snap.forEach(function(doc) { data.push(doc.data()); });
+    data.sort(function(a, b) { return (a.at || 0) - (b.at || 0); });
+    renderWhispers(data);
+  } catch(e) {}
+}
+
+function trySubscribeWhispers() {
+  if (!db) return;
+  try {
+    db.collection("whispers").onSnapshot(
+      function(snap) {
+        var data = [];
+        snap.forEach(function(doc) { data.push(doc.data()); });
+        data.sort(function(a, b) { return (a.at || 0) - (b.at || 0); });
+        renderWhispers(data);
+      },
+      function() {}
+    );
+  } catch(e) {}
 }
 
 async function addWhisper(text) {
@@ -806,6 +822,7 @@ async function addWhisper(text) {
   try {
     await db.collection("whispers").add({ who: 'her', text: text, at: Date.now() });
     showToast('他会知道的。');
+    await loadWhispersOnce();
   } catch(e) {
     showToast('没写进去……');
   }
@@ -865,23 +882,37 @@ function renderMusic(songs) {
       : '<div class="sc-art"></div>')
       + '<div class="sc-info"><div class="sc-name">' + esc(s.name || '未知歌曲') + '</div>'
       + '<div class="sc-artist">' + esc(s.artist || '') + '</div>'
-      + '<div class="sc-who">' + esc(s.who === 'her' ? '小玖分享' : '克言分享')
+      + '<div class="sc-who">' + esc(s.who === 'her' ? '小玥分享' : '克言分享')
       + ' · ' + fmtDate(s.at) + '</div></div>'
       + '<div class="sc-play">▶</div>';
     musicList.appendChild(card);
   });
 }
 
-function subscribeMusic() {
+async function loadMusicOnce() {
   if (!db) return;
-  db.collection("music").orderBy("at").onSnapshot(
-    function(snap) {
-      var data = [];
-      snap.forEach(function(doc) { data.push(doc.data()); });
-      renderMusic(data);
-    },
-    function() {}
-  );
+  try {
+    var snap = await db.collection("music").get();
+    var data = [];
+    snap.forEach(function(doc) { data.push(doc.data()); });
+    data.sort(function(a, b) { return (a.at || 0) - (b.at || 0); });
+    renderMusic(data);
+  } catch(e) {}
+}
+
+function trySubscribeMusic() {
+  if (!db) return;
+  try {
+    db.collection("music").onSnapshot(
+      function(snap) {
+        var data = [];
+        snap.forEach(function(doc) { data.push(doc.data()); });
+        data.sort(function(a, b) { return (a.at || 0) - (b.at || 0); });
+        renderMusic(data);
+      },
+      function() {}
+    );
+  } catch(e) {}
 }
 
 async function addSong(input) {
@@ -938,6 +969,7 @@ async function addSong(input) {
       pic: '', who: 'her', at: Date.now()
     });
     showToast('歌分享了~');
+    await loadMusicOnce();
   } catch(e) {
     showToast('没存进去……');
   }
